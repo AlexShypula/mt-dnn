@@ -31,7 +31,7 @@ def generate_decoder_opt(enable_san, max_opt):
         opt_v = max_opt
     return opt_v
 class SANBertNetwork(nn.Module):
-    def __init__(self, opt, bert_config=None, initial_from_local=False):
+    def __init__(self, opt, bert_config=None, initial_from_local=False, final_layer_weight = 0.90):
         super(SANBertNetwork, self).__init__()
         self.dropout_list = nn.ModuleList()
 
@@ -58,9 +58,20 @@ class SANBertNetwork(nn.Module):
         self.task_def_list = task_def_list
         self.decoder_opt = []
         self.task_types = []
+        self.layer_weight_list = nn.ParameterList()
+
+        # modifications here to add layer-weights during __init__
+        n_layers = self.bert.config.num_hidden_layers
+        lower_layer_weight = ((1 - final_layer_weight) / (n_layers-1))
+
         for task_id, task_def in enumerate(task_def_list):
             self.decoder_opt.append(generate_decoder_opt(task_def.enable_san, opt['answer_opt']))
             self.task_types.append(task_def.task_type)
+
+            exp_weights = torch.tensor([lower_layer_weight] * (n_layers-1) + [final_layer_weight])
+            weights = torch.log(exp_weights)
+
+            self.layer_weight_list.append(nn.Parameter(weights))
 
         # create output header
         self.scoring_list = nn.ModuleList()
@@ -114,15 +125,24 @@ class SANBertNetwork(nn.Module):
 
         self.apply(init_weights)
 
-    def encode(self, input_ids, token_type_ids, attention_mask):
+    def encode(self, input_ids, token_type_ids, attention_mask, task_id=0):
         outputs = self.bert(input_ids=input_ids, token_type_ids=token_type_ids,
                                                           attention_mask=attention_mask)
-        sequence_output = outputs[0]
-        pooled_output = outputs[1]
+        # sequence_output = outputs[0]
+        # pooled_output = outputs[1]
+        layers = outputs[2][1:] # 0 index has the embedded representations
+        layers = torch.stack(layers, dim = 3) # stack along new dimension
+        assert self.layer_weight_list[task_id].size(0) == layers.size(3)
+        normalized_weights = nn.functional.softmax(self.layer_weight_list[task_id])
+        normalized_layers = layers * normalized_weights
+
+        sequence_output = torch.sum(normalized_layers, dim = 3)
+        pooled_output = sequence_output[:, 0, :]
+
         return sequence_output, pooled_output
 
     def forward(self, input_ids, token_type_ids, attention_mask, premise_mask=None, hyp_mask=None, task_id=0):
-        sequence_output, pooled_output = self.encode(input_ids, token_type_ids, attention_mask)
+        sequence_output, pooled_output = self.encode(input_ids, token_type_ids, attention_mask, task_id)
 
         decoder_opt = self.decoder_opt[task_id]
         task_type = self.task_types[task_id]
