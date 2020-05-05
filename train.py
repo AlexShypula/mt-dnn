@@ -239,8 +239,9 @@ def main():
             raise ValueError("encoder_type is out of pre-defined types")
         literal_encoder_type = EncoderModelType(opt['encoder_type']).name.lower()
         config_class, model_class, tokenizer_class = MODEL_CLASSES[literal_encoder_type]
-        config = config_class.from_pretrained(init_model, output_hidden_state = True).to_dict() # change here to enable multi-layer output
+        config = config_class.from_pretrained(init_model, output_hidden_states = True).to_dict() # change here to enable multi-layer output
 
+    config['output_hidden_states'] = True
     config['attention_probs_dropout_prob'] = args.bert_dropout_p
     config['hidden_dropout_prob'] = args.bert_dropout_p
     config['multi_gpu_on'] = opt["multi_gpu_on"]

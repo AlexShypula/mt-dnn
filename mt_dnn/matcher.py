@@ -133,7 +133,7 @@ class SANBertNetwork(nn.Module):
         layers = outputs[2][1:] # 0 index has the embedded representations
         layers = torch.stack(layers, dim = 3) # stack along new dimension
         assert self.layer_weight_list[task_id].size(0) == layers.size(3)
-        normalized_weights = nn.functional.softmax(self.layer_weight_list[task_id])
+        normalized_weights = nn.functional.softmax(self.layer_weight_list[task_id], dim = 0)
         normalized_layers = layers * normalized_weights
 
         sequence_output = torch.sum(normalized_layers, dim = 3)
