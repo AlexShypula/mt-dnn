@@ -137,7 +137,7 @@ class SANBertNetwork(nn.Module):
         normalized_layers = layers * normalized_weights
 
         sequence_output = torch.sum(normalized_layers, dim = 3)
-        pooled_output = sequence_output[:, 0, :]
+        pooled_output = self.bert.pooler(sequence_output)
 
         return sequence_output, pooled_output
 
