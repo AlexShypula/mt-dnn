@@ -249,6 +249,19 @@ def main():
     opt.update(config)
 
     model = MTDNNModel(opt, state_dict=state_dict, num_train_step=num_all_batches)
+
+    ## new code
+    breakpoint()
+    tokenizer = tokenizer_class.from_pretrained(args.bert_model_type, do_lower_case=args.do_lower_case)
+
+    tasks = ["<{}>".format(task) for task in task_defs.get_task_names() if
+             task not in ("scitail", "snli")]  # domain adaptation snli, scitail, for these we want to use the rte task
+
+    tokenizer.add_tokens(tasks)
+    model.network.bert.resize_token_embeddings(len(tokenizer))
+    for token_name, token_id in tokenizer.added_tokens_encoder:
+        model.network.bert.embeddings.word_embeddings.weight[token_id] = model.network.bert.embeddings.word_embeddings[tokenizer.cls_token_id]
+
     if args.resume and args.model_ckpt:
         logger.info('loading model from {}'.format(args.model_ckpt))
         model.load(args.model_ckpt)

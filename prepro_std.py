@@ -12,7 +12,7 @@ from data_utils.log_wrapper import create_logger
 from experiments.exp_def import TaskDefs, EncoderModelType
 from experiments.squad import squad_utils
 from pretrained_models import *
-
+import pdb
 
 DEBUG_MODE = False
 MAX_SEQ_LEN = 512
@@ -28,7 +28,7 @@ logger = create_logger(
 def feature_extractor(tokenizer, text_a, text_b=None, max_length=512, model_type=None, enable_padding=False, pad_on_left=False,
                                       pad_token=0,
                                       pad_token_segment_id=0,
-                                      mask_padding_with_zero=False): # set mask_padding_with_zero default value as False to keep consistent with original setting
+                                      mask_padding_with_zero=False, task = "mnli"): # set mask_padding_with_zero default value as False to keep consistent with original setting
     inputs = tokenizer.encode_plus(
         text_a,
         text_b,
@@ -36,6 +36,10 @@ def feature_extractor(tokenizer, text_a, text_b=None, max_length=512, model_type
         max_length=max_length,
     )
     input_ids, token_type_ids = inputs["input_ids"], inputs["token_type_ids"]
+    if task not in ("snli","scitail"):
+        input_ids[0] = tokenizer.added_tokens_encoder["<{}>".format(task)]
+    else:
+        input_ids[0] = tokenizer.added_tokens_encoder["<rte>"]
 
     # The mask has 1 for real tokens and 0 for padding tokens. Only real
     # tokens are attended to.
@@ -67,9 +71,9 @@ def feature_extractor(tokenizer, text_a, text_b=None, max_length=512, model_type
     return input_ids,attention_mask, token_type_ids # input_ids, input_mask, segment_id
 
 def build_data(data, dump_path, tokenizer, data_format=DataFormat.PremiseOnly,
-               max_seq_len=MAX_SEQ_LEN, encoderModelType=EncoderModelType.BERT, lab_dict=None):
+               max_seq_len=MAX_SEQ_LEN, encoderModelType=EncoderModelType.BERT, lab_dict=None, task = "mnli"):
     def build_data_premise_only(
-            data, dump_path, max_seq_len=MAX_SEQ_LEN, tokenizer=None, encoderModelType=EncoderModelType.BERT):
+            data, dump_path, max_seq_len=MAX_SEQ_LEN, tokenizer=None, encoderModelType=EncoderModelType.BERT, task = "mnli"):
         """Build data of single sentence tasks
         """
         with open(dump_path, 'w', encoding='utf-8') as writer:
@@ -79,7 +83,7 @@ def build_data(data, dump_path, tokenizer, data_format=DataFormat.PremiseOnly,
                 label = sample['label']
                 if len(premise) > max_seq_len - 2:
                     premise = premise[:max_seq_len - 2]
-                input_ids, input_mask, type_ids = feature_extractor(tokenizer, premise, max_length=max_seq_len, model_type=encoderModelType.name)
+                input_ids, input_mask, type_ids = feature_extractor(tokenizer, premise, max_length=max_seq_len, model_type=encoderModelType.name, task = task)
                 features = {
                     'uid': ids,
                     'label': label,
@@ -88,7 +92,7 @@ def build_data(data, dump_path, tokenizer, data_format=DataFormat.PremiseOnly,
                 writer.write('{}\n'.format(json.dumps(features)))
 
     def build_data_premise_and_one_hypo(
-            data, dump_path, max_seq_len=MAX_SEQ_LEN, tokenizer=None, encoderModelType=EncoderModelType.BERT):
+            data, dump_path, max_seq_len=MAX_SEQ_LEN, tokenizer=None, encoderModelType=EncoderModelType.BERT, task = "mnli"):
         """Build data of sentence pair tasks
         """
         with open(dump_path, 'w', encoding='utf-8') as writer:
@@ -98,7 +102,7 @@ def build_data(data, dump_path, tokenizer, data_format=DataFormat.PremiseOnly,
                 hypothesis = sample['hypothesis']
                 label = sample['label']
                 input_ids, input_mask, type_ids = feature_extractor(tokenizer, premise, text_b=hypothesis, max_length=max_seq_len,
-                                                                    model_type=encoderModelType.name)
+                                                                    model_type=encoderModelType.name, task = task)
                 features = {
                     'uid': ids,
                     'label': label,
@@ -107,7 +111,7 @@ def build_data(data, dump_path, tokenizer, data_format=DataFormat.PremiseOnly,
                 writer.write('{}\n'.format(json.dumps(features)))
 
     def build_data_premise_and_multi_hypo(
-            data, dump_path, max_seq_len=MAX_SEQ_LEN, tokenizer=None, encoderModelType=EncoderModelType.BERT):
+            data, dump_path, max_seq_len=MAX_SEQ_LEN, tokenizer=None, encoderModelType=EncoderModelType.BERT, task = "mnli"):
         """Build QNLI as a pair-wise ranking task
         """
         with open(dump_path, 'w', encoding='utf-8') as writer:
@@ -121,7 +125,7 @@ def build_data(data, dump_path, tokenizer, data_format=DataFormat.PremiseOnly,
                 for hypothesis in hypothesis_list:
                     input_ids, mask, type_ids = feature_extractor(tokenizer,
                                                                         premise, hypothesis, max_length=max_seq_len,
-                                                                        model_type=encoderModelType.name)
+                                                                        model_type=encoderModelType.name, task = task)
                     input_ids_list.append(input_ids)
                     type_ids_list.append(type_ids)
                 features = {
@@ -133,7 +137,7 @@ def build_data(data, dump_path, tokenizer, data_format=DataFormat.PremiseOnly,
                     'olabel': sample['olabel']}
                 writer.write('{}\n'.format(json.dumps(features)))
 
-    def build_data_sequence(data, dump_path, max_seq_len=MAX_SEQ_LEN, tokenizer=None, encoderModelType=EncoderModelType.BERT, label_mapper=None):
+    def build_data_sequence(data, dump_path, max_seq_len=MAX_SEQ_LEN, tokenizer=None, encoderModelType=EncoderModelType.BERT, label_mapper=None, task = "mnli"):
         with open(dump_path, 'w', encoding='utf-8') as writer:
             for idx, sample in enumerate(data):
                 ids = sample['uid']
@@ -159,7 +163,7 @@ def build_data(data, dump_path, tokenizer, data_format=DataFormat.PremiseOnly,
                 features = {'uid': ids, 'label': label, 'token_id': input_ids, 'type_id': type_ids}
                 writer.write('{}\n'.format(json.dumps(features)))
 
-    def build_data_mrc(data, dump_path, max_seq_len=MRC_MAX_SEQ_LEN, tokenizer=None, label_mapper=None, is_training=True):
+    def build_data_mrc(data, dump_path, max_seq_len=MRC_MAX_SEQ_LEN, tokenizer=None, label_mapper=None, is_training=True, task = "mnli"):
         with open(dump_path, 'w', encoding='utf-8') as writer:
             unique_id = 1000000000 # TODO: this is from BERT, needed to remove it...
             for example_index, sample in enumerate(data):
@@ -214,17 +218,18 @@ def build_data(data, dump_path, tokenizer, data_format=DataFormat.PremiseOnly,
             dump_path,
             max_seq_len,
             tokenizer,
-            encoderModelType)
+            encoderModelType, task)
+
     elif data_format == DataFormat.PremiseAndOneHypothesis:
         build_data_premise_and_one_hypo(
-            data, dump_path, max_seq_len, tokenizer, encoderModelType)
+            data, dump_path, max_seq_len, tokenizer, encoderModelType, task)
     elif data_format == DataFormat.PremiseAndMultiHypothesis:
         build_data_premise_and_multi_hypo(
-            data, dump_path, max_seq_len, tokenizer, encoderModelType)
+            data, dump_path, max_seq_len, tokenizer, encoderModelType, task)
     elif data_format == DataFormat.Seqence:
-        build_data_sequence(data, dump_path, max_seq_len, tokenizer, encoderModelType, lab_dict)
+        build_data_sequence(data, dump_path, max_seq_len, tokenizer, encoderModelType, lab_dict, task)
     elif data_format == DataFormat.MRC:
-        build_data_mrc(data, dump_path, max_seq_len, tokenizer, encoderModelType)
+        build_data_mrc(data, dump_path, max_seq_len, tokenizer, encoderModelType, task)
     else:
         raise ValueError(data_format)
 
@@ -274,6 +279,12 @@ def main(args):
 
     task_defs = TaskDefs(args.task_def)
 
+    ## NEW code ##
+    # breakpoint()
+    tasks = ["<{}>".format(task) for task in task_defs.get_task_names() if task not in ("scitail", "snli")] # domain adaptation snli, scitail, for these we want to use the rte task
+
+    tokenizer.add_tokens(tasks)
+
     for task in task_defs.get_task_names():
         task_def = task_defs.get_task_def(task)
         logger.info("Task %s" % task)
@@ -285,13 +296,15 @@ def main(args):
             rows = load_data(file_path, task_def)
             dump_path = os.path.join(mt_dnn_root, "%s_%s.json" % (task, split_name))
             logger.info(dump_path)
+            # breakpoint()
+            # continue
             build_data(
                 rows,
                 dump_path,
                 tokenizer,
                 task_def.data_type,
                 encoderModelType=encoder_model,
-                lab_dict=task_def.label_vocab)
+                lab_dict=task_def.label_vocab, task = task)
 
 
 if __name__ == '__main__':
